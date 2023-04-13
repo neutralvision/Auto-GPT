@@ -1,17 +1,35 @@
+import subprocess
+
 import docker
 import os
 
+from config import Config
+
+
+working_directory = "auto_gpt_workspace"
+
+cfg = Config()
+
+# TODO: extract this function from file_operations to have in one place
+def safe_join(base, *paths):
+    """Join one or more path components intelligently."""
+    new_path = os.path.join(base, *paths)
+    norm_new_path = os.path.normpath(new_path)
+
+    if os.path.commonprefix([base, norm_new_path]) != base:
+        raise ValueError("Attempted to access outside of working directory.")
+
+    return norm_new_path
 
 def execute_python_file(file):
     """Execute a Python file in a Docker container and return the output"""
-    workspace_folder = "auto_gpt_workspace"
 
-    print (f"Executing file '{file}' in workspace '{workspace_folder}'")
+    print (f"Executing file '{file}' in workspace '{working_directory}'")
 
     if not file.endswith(".py"):
         return "Error: Invalid file type. Only .py files are allowed."
 
-    file_path = os.path.join(workspace_folder, file)
+    file_path = safe_join(working_directory, file)
 
     if not os.path.isfile(file_path):
         return f"Error: File '{file}' does not exist."
@@ -26,7 +44,7 @@ def execute_python_file(file):
             'python:3.10',
             f'python {file}',
             volumes={
-                os.path.abspath(workspace_folder): {
+                os.path.abspath(working_directory): {
                     'bind': '/workspace',
                     'mode': 'ro'}},
             working_dir='/workspace',
@@ -46,3 +64,24 @@ def execute_python_file(file):
 
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+def execute_command_on_console(command):
+    """ Execute a command on console """
+
+    if not cfg.command_line_access:
+        print("Set COMMAND_LINE_ACCESS environment variable to True to use this feature.")
+        return "execute_command_on_console is disabled for this session. Do not try again"
+
+    if not command or not isinstance(command, str):
+        return "Invalid command. Please provide a non-empty string."
+
+    try:
+        result = subprocess.run(command.split(), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, cwd=working_directory)
+        if result.returncode == 0:
+            return result.stdout
+        else:
+            return f"Error executing command: {result.stderr}"
+    except Exception as e:
+        return f"An error occurred while executing the command: {e}"
